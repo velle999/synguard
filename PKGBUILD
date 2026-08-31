@@ -1,0 +1,164 @@
+pkgname=synguard
+pkgver=0.1.0
+# 35: THE SHIPPED POLICY ACTS NOW. synguard shipped 55 rules and not one of
+#   them carried `deny` or `quarantine`: the daemon ran with --mode enforce, so
+#   acting was permitted, and nothing loaded ever asked for it. It detected and
+#   alerted and had never once stopped anything — which also means its acting
+#   path had never been exercised on a real machine.
+#   50-default-deny.rules arms three, chosen against one bar: does anything on
+#   a working desktop do this, EVER. deny-ld-preload (nothing on Arch manages
+#   that file; refusing the READ is what neuters an already-planted rootkit,
+#   and glibc treats a failed open as "no preload" so it fails safe),
+#   deny-bpf-canary (the positive control — a rule that never fires is
+#   indistinguishable from one that does not work), and
+#   quarantine-exec-from-dev (SIGSTOP, recoverable, evidence kept).
+#   ⚠ NOT armed, with reasons in the file: module loads (DKMS and the NVIDIA
+#   driver trip it on a routine `pacman -Syu`, and synapse_kmod is itself DKMS)
+#   and shell-from-sshd (sshd execs the account's LOGIN shell, so the example's
+#   `path /usr/bin/sh` is either inert or an SSH lockout depending on a setting
+#   the file cannot see).
+#   ⚠ The two denies sit at priority 0 so they lower to the BPF LSM — below
+#   00-base's allow-synguard/allow-synapd nothing can be proved disjoint and
+#   lowering refuses. Verified by lower_test, not asserted. The kernel gate
+#   still needs --bpf-enforce, which the unit does NOT pass: these are
+#   after-the-fact kills until somebody arms it deliberately.
+# 36: A KERNEL REFUSAL LEFT NO TRACE. `bpf-lsm: denied=…` was logged exactly
+#   once, from the startup banner, and nothing ever re-emitted it — so a gate
+#   that had refused four thousand opens and one that had refused none produced
+#   identical journals for the life of the process. The single event this
+#   subsystem exists to produce was invisible.
+#   Found by tools/bpf-enforce-check.sh on the first real run of the gate: it
+#   watched the counter across a refusal it had just caused and saw 0 -> 0,
+#   because nothing had asked the kernel for the number since boot. The gate
+#   was working perfectly; the reporting was not.
+#   Now logged ON CHANGE at WARNING (a refusal is rare and worth a line; a
+#   timer dumping a usually-zero number is the noise that gets a subsystem
+#   filtered out), with the first read only priming the baseline so a restart
+#   does not report old denials as new. SIGUSR1 dumps the full status on
+#   demand — whether the gate is open and WHY when it is closed — which is what
+#   the rig now samples instead of scraping a boot line.
+# 37: SIGUSR1 logged the summary and not the counters. sg_bpf_status() says
+#   attached/armed/gate-open; `denied=` lives in sg_bpf_counters(), and only
+#   the first was being logged — so a caller asking "has this refused
+#   anything" got a line that could not answer and concluded no. Both now, on
+#   SIGUSR1 and beside the on-change REFUSED line.
+# 38: ⛔ URGENT — deny-ld-preload BRICKED A MACHINE, and 35/36/37 all carry it.
+#   The rule matched ANY open of /etc/ld.so.preload. ld.so opens that file on
+#   EVERY exec, and the userspace path cannot refuse an open — it can only kill
+#   the opener's process TREE afterwards. So on any machine where that file
+#   existed and the BPF gate was not armed (every machine: --bpf-enforce is not
+#   in the unit), every command on the system had its tree torn down. Including
+#   the `rm` you would use to delete the file, and sshd. Observed on velle's
+#   laptop: a test that planted the file left a box where nothing could run.
+#   `access write` now. A READ is what a working system does with that file; a
+#   WRITE is what an attack does. The "refusing the read neuters an
+#   already-planted preload" property goes with it — it was only ever available
+#   to the kernel path, and it is not worth a rule that bricks a box on the
+#   other one. policy_test pins the access mode.
+# 39: the way out, written down where the rules are. A deny rule that matches
+#   something every program does takes the whole machine with it, and the first
+#   time that happened the owner's conclusion was "I will have to reinstall".
+#   They did not: systemd.mask=synguard.service for ONE boot fixes it, or
+#   init=/bin/bash if that will not take. ⚠ synapse.bpf_enforce=0 is NOT the
+#   answer — it disarms the KERNEL gate only, and a userspace deny keeps
+#   killing. Also: sg_kill_tree SIGSTOPs before tearing down, so a machine in
+#   that state is usually resumable with kill -CONT, and `[[ -e path ]]` is a
+#   builtin that needs no exec.
+pkgrel=40
+pkgdesc="SynapseOS AI-driven security monitor and threat classifier"
+arch=('x86_64')
+license=('GPL-2.0-or-later')
+depends=('glibc' 'systemd-libs' 'libbpf')
+# clang and bpftool are BUILD-time only. The BPF-LSM object is compiled to
+# CO-RE bytecode here and loaded by libbpf at runtime, so an installed system
+# needs no compiler and there is no vermagic to go stale against the running
+# kernel — the whole reason enforcement went this way instead of into the kmod.
+makedepends=('meson' 'ninja' 'gcc' 'pkg-config' 'clang' 'bpf')
+optdepends=('synapd: AI threat classification')
+# ⛔ THE RELEASE URL, AND IT CARRIES THE pkgrel. The filename before `::` is
+# what makepkg looks for on disk, so a build from this checkout uses the
+# tarball build-all.sh just collected and never downloads. The URL after it is
+# for everybody else, and it names <pkgver>-<pkgrel> because that tag is the
+# only thing that makes a published source unambiguously the one this PKGBUILD
+# was written against.
+#
+# ⛔ AND sha256sums STAYS 'SKIP'. A real checksum would break every LOCAL build
+# the moment the tree changed, which is every build that matters here.
+source=("$pkgname-$pkgver.tar.gz::https://github.com/velle999/$pkgname/releases/download/$pkgver-$pkgrel/$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+# Refuse to build a tarball that is older than the working tree.
+#
+# The tarball, not src/, is what gets compiled. Editing a source file and
+# running makepkg without regenerating it produces a package that builds
+# cleanly, installs cleanly, and contains the PREVIOUS binary — which is
+# exactly what happened while fixing synguard's sd_notify call. Nothing about
+# the output says anything is wrong, so the check has to be here.
+#
+# The extraction dir ($pkgname-$pkgver, under src/ alongside the real sources)
+# is always newer than the tarball because makepkg just created it; excluded by
+# path, or this would fire on every build.
+prepare() {
+    local tarball="$startdir/$pkgname-$pkgver.tar.gz"
+    [ -f "$tarball" ] || return 0
+
+    local stale
+    stale=$(find "$startdir/src" "$startdir/include" "$startdir/meson.build" \
+                 "$startdir/systemd" "$startdir/rules" "$startdir/tests" \
+                 -type f -newer "$tarball" \
+                 -not -path "*/$pkgname-$pkgver/*" \
+                 -print -quit 2>/dev/null)
+
+    if [ -n "$stale" ]; then
+        error "$pkgname-$pkgver.tar.gz is older than ${stale#"$startdir"/}"
+        error "makepkg would silently package the PREVIOUS build. Run:"
+        error "    ./mktarball.sh"
+        return 1
+    fi
+}
+
+build() {
+    cd "$srcdir/synguard-0.1.0"
+    # -Dbpf_lsm=enabled, never 'auto'. On auto a build host missing clang or
+    # bpftool produces a package that compiles, installs and runs perfectly
+    # while silently containing no enforcement layer at all — an optional
+    # component has no failure tell. Enabled makes that a configure-time error.
+    #
+    # bpftool reads /sys/kernel/btf/vmlinux to generate vmlinux.h, so the build
+    # environment needs /sys mounted (devtools chroots do; a bare container may
+    # not). CO-RE keeps the resulting object portable, so this is not a pin to
+    # the build host's kernel.
+    meson setup build --prefix=/usr --buildtype=release -Dbpf_lsm=enabled
+    meson compile -C build
+}
+
+package() {
+    cd "$srcdir/synguard-0.1.0"
+
+    # Prove the thing we just claimed to build is in there. A commit and a
+    # pkgrel bump ship nothing on their own, and "enforcement is missing" is
+    # invisible at runtime until the day a rule was supposed to fire.
+    if ! readelf -d build/synguard | grep -q 'NEEDED.*libbpf'; then
+        error "synguard built WITHOUT the BPF-LSM gate (not linked against libbpf)"
+        return 1
+    fi
+
+    meson install -C build --destdir="$pkgdir"
+    install -dm750 "$pkgdir/etc/synguard/rules.d"
+    install -Dm640 rules/00-base.rules "$pkgdir/etc/synguard/rules.d/00-base.rules"
+    install -Dm640 rules/10-ai-assist.rules "$pkgdir/etc/synguard/rules.d/10-ai-assist.rules"
+    install -Dm640 rules/20-input-devices.rules "$pkgdir/etc/synguard/rules.d/20-input-devices.rules"
+    install -Dm640 rules/30-network-persistence.rules "$pkgdir/etc/synguard/rules.d/30-network-persistence.rules"
+    # Template, not policy. rules_load() only parses *.rules, so the .example
+    # suffix keeps this inert while still putting it where an admin will find
+    # it — next to the rules it is a template for, not buried in /usr/share.
+    # ⚠ THIS ONE IS LIVE. Every other .rules file here alerts; this is the one
+    # that acts, and its name ends in .rules rather than .example precisely so
+    # synguard loads it. See its header for what is in it and what was left out.
+    install -Dm640 rules/50-default-deny.rules "$pkgdir/etc/synguard/rules.d/50-default-deny.rules"
+    install -Dm640 rules/40-enforce.rules.example "$pkgdir/etc/synguard/rules.d/40-enforce.rules.example"
+    install -dm750 "$pkgdir/var/lib/synguard"
+    install -dm750 "$pkgdir/var/log/synguard"
+    install -Dm644 systemd/synguard.service \
+        "$pkgdir/usr/lib/systemd/system/synguard.service"
+}
