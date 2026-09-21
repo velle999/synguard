@@ -111,7 +111,11 @@ pkgver=0.1.0
 #   ⚠ A machine that armed itself with a local drop-in (the desktop's
 #   10-bpf-enforce.conf) should drop it: it is redundant from here, and it
 #   hides every future change to ExecStart.
-pkgrel=44
+# 45: the source tarball is signed, so it has to be re-derivable from its
+#   commit. mktarball.sh packs the same bytes every time (sorted, fixed clock
+#   and owner) and leaves out anything .gitignore names. The package is
+#   unchanged.
+pkgrel=45
 pkgdesc="SynapseOS AI-driven security monitor and threat classifier"
 arch=('x86_64')
 license=('GPL-2.0-or-later')
@@ -209,3 +213,9 @@ package() {
     install -Dm644 systemd/synguard.service \
         "$pkgdir/usr/lib/systemd/system/synguard.service"
 }
+
+# Added by packaging/git-export.sh: the tarball is signed with the SynapseOS
+# update key, and makepkg refuses it unless the signature is good.
+source+=("$pkgname-$pkgver.tar.gz.sig::https://github.com/velle999/$pkgname/releases/download/$pkgver-$pkgrel/$pkgname-$pkgver.tar.gz.sig")
+sha256sums+=('SKIP')
+validpgpkeys=('648B4C32942C79B20E8AC3F49CECEBCDF48037C1')  # SynapseOS Update Signing <updates@soslinux.org>
