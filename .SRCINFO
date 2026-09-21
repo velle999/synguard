@@ -1,7 +1,7 @@
 pkgbase = synguard
 	pkgdesc = SynapseOS AI-driven security monitor and threat classifier
 	pkgver = 0.1.0
-	pkgrel = 42
+	pkgrel = 43
 	arch = x86_64
 	license = GPL-2.0-or-later
 	makedepends = meson
@@ -14,7 +14,7 @@ pkgbase = synguard
 	depends = systemd-libs
 	depends = libbpf
 	optdepends = synapd: AI threat classification
-	source = synguard-0.1.0.tar.gz::https://github.com/velle999/synguard/releases/download/0.1.0-42/synguard-0.1.0.tar.gz
+	source = synguard-0.1.0.tar.gz::https://github.com/velle999/synguard/releases/download/0.1.0-43/synguard-0.1.0.tar.gz
 	sha256sums = SKIP
 
 pkgname = synguard
