@@ -22,7 +22,9 @@ Two further switches gate the parts that can act:
 
 - `--ai-enforce` lets the classifier's verdicts deny or quarantine. Without
   it the classifier is **advisory** and its verdicts are clamped to alerts —
-  only rule verdicts can kill.
+  only rule verdicts can kill. In either mode an `escalate` rule is at least
+  an alert: the classifier adds a threat level and a reason, and cannot make
+  the event quieter.
 - `--bpf-enforce` arms the BPF-LSM gate, so an enforceable deny is refused
   in-kernel rather than the process being killed after the fact.
 
@@ -57,4 +59,4 @@ Developed in [the SynapseOS monorepo](https://github.com/velle999/SYNAPSE),
 in `synguard/`. **This repository is generated from it** — the PKGBUILD, a
 generated `.SRCINFO` and this README — so issues and patches belong there.
 
-synguard 0.1.0-40 · GPL-2.0-or-later
+synguard 0.1.0-41 · GPL-2.0-or-later
